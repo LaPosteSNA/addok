@@ -30,6 +30,8 @@ Options:
 
 import os
 import sys
+import threading
+from addok import server
 
 from docopt import docopt
 
@@ -46,14 +48,29 @@ def main():
     from addok import batch
     from addok.index_utils import create_edge_ngrams
 
+
+
+
     # Hook for plugins to register themselves.
     if hasattr(config, 'ON_LOAD'):
         config.ON_LOAD()
 
     if args['serve']:
-        from werkzeug.serving import run_simple
-        run_simple(args['--host'], int(args['--port']), app,
-                   use_debugger=True, use_reloader=True)
+
+        if config.UPDATING_THREAD_STATE:
+            # tes = (lambda: threading.Thread(target=server.affiche(), name='updateJson', daemon=True))
+
+            # # t = Timer(config.UPDATING_DELAY, server.affiche, ())
+            # _thread.exit_thread()
+            t = threading.Thread(target=server.update_job, name='updateJson')
+            t.daemon = True
+            t.start()
+            http_server(args, use_reloader=False)
+        else:
+            # import ipdb;ipdb.set_trace()
+             http_server(args, use_reloader=True)
+
+
     elif args['shell']:
         cli = Cli()
         cli()
@@ -77,6 +94,13 @@ def main():
             batch.process_psql()
     elif args['ngrams']:
         create_edge_ngrams()
+
+
+def http_server(args, use_reloader):
+    from werkzeug.serving import run_simple
+    run_simple(args['--host'], int(args['--port']), server.app,
+               use_debugger=True, use_reloader=use_reloader)
+
 
 if __name__ == '__main__':
     main()

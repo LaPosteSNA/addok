@@ -6,6 +6,7 @@ import logging
 import logging.handlers
 import os
 from pathlib import Path
+import time
 
 from werkzeug.exceptions import BadRequest, HTTPException, NotFound
 from werkzeug.routing import Map, Rule
@@ -46,6 +47,20 @@ def log_query(query, results):
             result = '-'
             score = '-'
         query_logger.debug('\t'.join([query, result, score]))
+
+
+def job():
+    # import ipdb; ipdb.set_trace()
+    print("I'm working...")
+
+
+def update_job():
+    while 1:
+        job()
+        time.sleep(config.UPDATING_DELAY)
+
+
+
 
 
 def app(environ, start_response):
@@ -111,6 +126,8 @@ class View(object, metaclass=WithEndPoint):
             response = Response(*response)
         elif isinstance(response, str):
             response = Response(response)
+
+
         return cls.cors(response)
 
     def to_geojson(self, results, query=None, filters=None, center=None,
