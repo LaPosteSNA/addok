@@ -130,6 +130,7 @@ def index_housenumbers(pipe, housenumbers, doc, key, tokens, update_ngrams):
         return
     del doc['housenumbers']
     to_index = {}
+    print(housenumbers.items())
     for number, point in housenumbers.items():
         vals = [number, point['lat'], point['lon']]
         _id = point.get('id')
@@ -205,6 +206,7 @@ def index_document(doc, update_ngrams=True):
             continue
         if name == config.HOUSENUMBERS_FIELD:
             housenumbers = values
+            print(*values)
         else:
             boost = field.get('boost', config.DEFAULT_BOOST)
             if callable(boost):
