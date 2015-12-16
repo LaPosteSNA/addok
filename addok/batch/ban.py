@@ -72,3 +72,14 @@ def row_to_doc(row):
     # See https://wiki.osm.org/wiki/Nominatim/Development_overview#Country_to_street_level  # noqa
     doc['importance'] = (30 / 30) * 0.1
     return doc
+
+def last_update():
+    from addok.db import DB
+    pipe = DB.pipeline()
+    pipe.sadd("last_update", key)
+
+@yielder
+def ban_to_row(row):
+    print(row)
+
+    return row
