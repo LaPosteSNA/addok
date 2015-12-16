@@ -46,6 +46,7 @@ HOUSENUMBER_PROCESSORS = [
 ]
 BATCH_PROCESSORS = (
     'addok.batch.default.to_json',
+    'addok.batch.ban.ban_to_row',
 )
 API_ENDPOINTS = [
     ('/get/<doc_id>/', 'get'),
@@ -64,10 +65,13 @@ FIELDS = [
     {'key': 'name', 'boost': 4, 'null': False},
     #{'key': 'name'},
     {'key': 'locality'},
+    {'key': 'id'},
     {'key': 'street'},
     {'key': 'municipality'},
     {'key': 'number'},
+    {'key': 'ordinal'},
     {'key': 'context'},
+    {'key': 'resource'},
     {'key': 'housenumbers', type: 'house'},
 
 ]
