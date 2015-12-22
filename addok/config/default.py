@@ -72,7 +72,9 @@ FIELDS = [
     {'key': 'ordinal'},
     {'key': 'context'},
     {'key': 'resource'},
-    {'key': 'housenumbers', type: 'house'},
+    {'key': 'postcode', type: 'housenumber'},
+    {'key': 'cea', type: 'housenumber'},
+    {'key': 'housenumbers', type: 'housenumber'},
 
 ]
 
@@ -151,10 +153,12 @@ PSQL_LIMIT = None
 
 PSQL_ITERSIZE = 1000
 
-UPDATING_THREAD_STATE = True
+UPDATING_THREAD_STATE = False
 
 UPDATING_THREAD_JOBS = (
     'addok.thread.searchDiff'
 )
 
-UPDATING_DELAY = 5  # secondes
+UPDATING_DELAY = 150  # secondes
+
+UPDATE_DIR = 'C:\\Users\\mhx157\\dif\\*.json'

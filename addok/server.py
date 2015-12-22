@@ -7,11 +7,15 @@ import logging.handlers
 import os
 from pathlib import Path
 import time
+import glob
+import re
 
 from werkzeug.exceptions import BadRequest, HTTPException, NotFound
 from werkzeug.routing import Map, Rule
 from werkzeug.wrappers import Request, Response
 
+from addok.batch import preprocess_batch
+from addok.batch.utils import get_increm, set_increm
 from . import config
 from .core import Result, reverse, search
 
@@ -49,18 +53,20 @@ def log_query(query, results):
         query_logger.debug('\t'.join([query, result, score]))
 
 
-def job():
-    # import ipdb; ipdb.set_trace()
-    print("I'm working...")
+def update_by_diff_file():
+    files = glob.glob(config.UPDATE_DIR)
+    for filepath in sorted(files):
+        increment = int(re.search('diff_([0-9])', filepath).group(0)[5:]) # find the increment
+        if get_increm() < increment:
+            set_increm(increment)
+            with open(filepath) as f:
+                preprocess_batch(f)
 
 
-def update_job():
+def sched_job():
     while 1:
-        job()
+        update_by_diff_file()
         time.sleep(config.UPDATING_DELAY)
-
-
-
 
 
 def app(environ, start_response):
@@ -83,7 +89,6 @@ def app(environ, start_response):
 
 
 class WithEndPoint(type):
-
     endpoints = {}
 
     def __new__(mcs, name, bases, attrs, **kwargs):
@@ -94,7 +99,6 @@ class WithEndPoint(type):
 
 
 class View(object, metaclass=WithEndPoint):
-
     config = config
 
     def __init__(self, request):
@@ -126,7 +130,6 @@ class View(object, metaclass=WithEndPoint):
             response = Response(*response)
         elif isinstance(response, str):
             response = Response(response)
-
 
         return cls.cors(response)
 
@@ -165,7 +168,6 @@ class View(object, metaclass=WithEndPoint):
 
 
 class Get(View):
-
     endpoint = 'get'
 
     def get(self, doc_id):
@@ -178,7 +180,6 @@ class Get(View):
 
 
 class Search(View):
-
     endpoint = 'search'
 
     def get(self):
@@ -196,8 +197,8 @@ class Search(View):
         try:
             lat = float(self.request.args.get('lat'))
             lon = float(self.request.args.get('lon',
-                        self.request.args.get('lng',
-                        self.request.args.get('long'))))
+                                              self.request.args.get('lng',
+                                                                    self.request.args.get('long'))))
             center = [lat, lon]
         except (ValueError, TypeError):
             lat = None
@@ -214,14 +215,13 @@ class Search(View):
 
 
 class Reverse(View):
-
     endpoint = 'reverse'
 
     def get(self):
         try:
             lat = float(self.request.args.get('lat'))
             lon = float(self.request.args.get('lon',
-                        self.request.args.get('lng')))
+                                              self.request.args.get('lng')))
         except (ValueError, TypeError):
             raise BadRequest()
         try:
@@ -234,7 +234,6 @@ class Reverse(View):
 
 
 class BaseCSV(View):
-
     MISSING_DELIMITER_MSG = ('Unable to sniff delimiter, please add one with '
                              '"delimiter" parameter.')
 
@@ -312,7 +311,7 @@ class BaseCSV(View):
 
     def compute_writer(self):
         if (self.output_encoding == 'utf-8'
-                and self.request.form.get('with_bom')):
+            and self.request.form.get('with_bom')):
             # Make Excel happy with UTF-8
             self.output.write(codecs.BOM_UTF8.decode('utf-8'))
         self.writer = csv.DictWriter(self.output, self.fieldnames,
@@ -330,13 +329,13 @@ class BaseCSV(View):
 
     def compute_response(self):
         self.response = Response(
-                            self.output.read().encode(self.output_encoding))
+                self.output.read().encode(self.output_encoding))
         filename, ext = os.path.splitext(self.f.filename)
         attachment = 'attachment; filename="{name}.geocoded.csv"'.format(
-                                                                 name=filename)
+                name=filename)
         self.response.headers['Content-Disposition'] = attachment
         content_type = 'text/csv; charset={encoding}'.format(
-            encoding=self.output_encoding)
+                encoding=self.output_encoding)
         self.response.headers['Content-Type'] = content_type
 
     def post(self):
@@ -378,7 +377,6 @@ class BaseCSV(View):
 
 
 class CSVSearch(BaseCSV):
-
     endpoint = 'search.csv'
     base_headers = ['latitude', 'longitude', 'result_label', 'result_score',
                     'result_type', 'result_id', 'result_housenumber']
@@ -414,7 +412,6 @@ class CSVSearch(BaseCSV):
 
 
 class CSVReverse(BaseCSV):
-
     endpoint = 'reverse.csv'
     base_headers = ['result_latitude', 'result_longitude', 'result_label',
                     'result_distance', 'result_type', 'result_id',
@@ -422,7 +419,7 @@ class CSVReverse(BaseCSV):
 
     def process_row(self, row):
         lat = row.get('latitude', row.get('lat', None))
-        lon = row.get('longitude', row.get('lon', row.get('lng', row.get('long',None))))
+        lon = row.get('longitude', row.get('lon', row.get('lng', row.get('long', None))))
         try:
             lat = float(lat)
             lon = float(lon)

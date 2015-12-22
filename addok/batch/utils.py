@@ -1,7 +1,7 @@
 import time
 from multiprocessing import Pool
 
-from addok.index_utils import index_document, deindex_document
+from addok.index_utils import index_document, deindex_document, get_increment, index_increment
 
 
 def process(doc):
@@ -30,3 +30,15 @@ def batch(iterable):
     pool.close()
     pool.join()
     print('Done', count, 'in', time.time() - start)
+
+
+def get_increm():
+    try:
+        increment = get_increment()
+    except:
+        increment = 0
+    return increment
+
+
+def set_increm(increment):
+    index_increment(increment)

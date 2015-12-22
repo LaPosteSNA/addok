@@ -19,6 +19,8 @@ def preprocess(s):
     if s not in _CACHE:
         _CACHE[s] = list(iter_pipe(s, PROCESSORS))
     return _CACHE[s]
+
+
 _CACHE = {}
 
 
@@ -26,6 +28,8 @@ def preprocess_housenumber(s):
     if s not in _HOUSENUMBER_CACHE:
         _HOUSENUMBER_CACHE[s] = list(iter_pipe(s, HOUSENUMBER_PROCESSORS))
     return _HOUSENUMBER_CACHE[s]
+
+
 _HOUSENUMBER_CACHE = {}
 
 
@@ -182,7 +186,7 @@ def index_filters(pipe, key, doc):
             pipe.sadd(filter_key(name, value), key)
     # Special case for housenumber type, because it's not a real type
     if "type" in config.FILTERS and config.HOUSENUMBERS_FIELD \
-       and doc.get(config.HOUSENUMBERS_FIELD):
+            and doc.get(config.HOUSENUMBERS_FIELD):
         pipe.sadd(filter_key("type", "housenumber"), key)
 
 
@@ -297,3 +301,14 @@ def create_edge_ngrams():
     pool.close()
     pool.join()
     print('Done', count, 'in', time.time() - start)
+
+
+def index_increment(increment):
+    # pipe = DB.pipeline()
+    DB.set('increment', increment)
+
+
+def get_increment():
+    # pipe = DB.pipeline()
+    increment = int(DB.get('increment'))
+    return increment

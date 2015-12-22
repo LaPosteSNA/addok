@@ -62,7 +62,7 @@ def main():
 
             # # t = Timer(config.UPDATING_DELAY, server.affiche, ())
             # _thread.exit_thread()
-            t = threading.Thread(target=server.update_job, name='updateJson')
+            t = threading.Thread(target=server.sched_job, name='updateJson')
             t.daemon = True
             t.start()
             http_server(args, use_reloader=False)
