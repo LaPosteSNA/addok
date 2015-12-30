@@ -136,7 +136,7 @@ class Result(object):
         name_tokens = self.name.split()
         for original in originals:
             if original in self.housenumbers:
-                raw, lat, lon, *_id = self.housenumbers[original].split('|')
+                raw, lat, lon, *extra = self.housenumbers[original].split('|')
                 if raw in name_tokens and originals.count(original) != 2:
                     # Consider that user is not requesting a housenumber if
                     # token is also in name (ex. rue du 8 mai), unless this
@@ -146,16 +146,9 @@ class Result(object):
                 self.lat = lat
                 self.lon = lon
                 self.type = 'housenumber'
-                if _id:
-                    self.id = _id[0]
-
-                vals = []
-                for field in config.FIELDS:
-                    if field.get('type') == 'housenumbers' and field.get('key') != 'housenumbers':
-                        vals.append(field)
-                        print(_id[len(vals)])
-
-                        self._doc[field.get('key')] = _id[len(vals)]
+                if extra:
+                    extra = zip(config.HOUSENUMBERS_PAYLOAD_FIELDS, extra)
+                    self._cache.update(extra)
                 break
 
     @property
