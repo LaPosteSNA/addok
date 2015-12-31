@@ -77,6 +77,8 @@ def main():
             batch.process_psql()
     elif args['ngrams']:
         create_edge_ngrams()
+    elif args['update']:
+        pass
 
 if __name__ == '__main__':
     main()
