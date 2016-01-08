@@ -6,6 +6,7 @@ Usage:
     addok shell [options]
     addok batch [<filepath>...] [options]
     addok ngrams [options]
+    addok update [options]
 
 Examples:
     addok serve --port 5432 --debug
@@ -24,6 +25,7 @@ Options:
     --dbuser=<string>   override dbuser
     --dbhost=<string>   override dbhost
     --dbport=<string>   override dbport
+    --banname=<string>   override banname
     --limit=<number>    add an optional limit
     --config=<path>     path to local config file
 """
@@ -32,6 +34,8 @@ import os
 import sys
 
 from docopt import docopt
+
+from addok.update import get_response
 
 
 def main():
@@ -78,7 +82,8 @@ def main():
     elif args['ngrams']:
         create_edge_ngrams()
     elif args['update']:
-        pass
+        if args['--banname']:
+            get_response() #args['--banname'])
 
 if __name__ == '__main__':
     main()
