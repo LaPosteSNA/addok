@@ -1,35 +1,85 @@
+import json
 import os
 
 import requests
 from urllib.parse import urlparse
 
+from pathlib import Path
+
+import sys
+
 from addok.batch.utils import process
+from ban.commands import report
 
 BAN_SERVER = "http://localhost:5959"  # "http://ban-dev.data.gouv.fr:80"
 PATH = 'C:\\Users\\mhx157'
 
 
-def get_response():
-    # Replace with the correct URL
-    # url = "http://ban-dev.data.gouv.fr/municipality/15076"
-    # resp = make_municipality(None, request_call(url))
-    # print(resp)
 
-    # resp = make_a_way(None, 'street', 1)
-    # print(resp)
+def get_response():
+    add = 'C:\\Users\\mhx157\\AllResourcesBAN.json'
+    path = Path(add)
+    with path.open() as f:
+        bddban = {}
+        for line in f:
+
+            jr = json.loads(line)
+            if jr['resource'] != 'housenumber':
+                if jr['resource'] not in bddban:
+                    bddban[jr['resource']] = {}
+                bddban[jr['resource']][jr['id']] = jr
+
+        for municipality in bddban['municipality']:
+            response = make_municipality(None, bddban['municipality'][municipality])
+            print(response)
+            if response:
+                process(response)
+
+        if jr['resource'] == 'locality':
+            hns = get_housenumbers_in_file_for(f, jr)
+            response = make_a_way(None, hns, jr['resource'], jr['id'])
+            print(response)
+            if response:
+                process(response)
+
+        print('finish')
+
+
+        # Replace with the correct URL
+        # url = "http://ban-dev.data.gouv.fr/municipality/15076"
+        # resp = make_municipality(None, request_call(url))
+        # print(resp)
+
+        # resp = make_a_way(None, 'street', 1)
+        # print(resp)
+
+
+def get_housenumbers_in_file_for(f,res):
+    hns = {}
+    for line in f:
+        jr = json.loads(line)
+        if jr['resource'] == 'housenumber' and jr[res['resource']] == res['id']:
+            hns.update(make_a_housenumber(jr))
+    return hns
+
+
+
+def update_by_diff():
     diffs = get_diff()
     for diff in diffs['collection']:
         if diff['resource'] == 'municipality':
             print('resource: municipality')
         elif diff['resource'] == 'housenumber':
             if diff['new'].get('locality'):
-                process(make_a_way('update', 'locality', diff['new']['locality']))
+                hns, resource_name, way = get_a_way('update', 'locality', diff['new']['locality'])
             elif diff['new'].get('street'):
-                process(make_a_way('update', 'locality', diff['new']['street']))
+                hns, resource_name, way = get_a_way('update', 'street', diff['new']['street'])
             elif diff['new'].get('districts'):
-                process(make_a_way('update', 'locality', diff['new']['districts']))
+                hns, resource_name, way = get_a_way('update', 'districts', diff['new']['districts'])
+
         else:
-            process(make_a_way('update', diff.get('resource'), diff.get('resource_id')))
+            hns, resource_name, way = get_a_way('update', diff.get('resource'), diff.get('resource_id'))
+        process(make_a_way('update', hns, resource_name, way))
         print('process ok')
 
         # with Path(os.path.join(PATH, 'allBAN_addok.json')).open(mode='w') as f:
@@ -59,34 +109,35 @@ def extract_ban_to_file(municipality_id, f):
     # print(response)
     if response:
         f.write(str(response) + '\n')
-        resp = get_municipality_ways(municipality_id, 'localities')
+        resp = get_municipality_ways_by_id(municipality_id, 'localities')
         # print(resp)
         for loc in resp:
-            rep = make_a_way(None, loc.get('resource'), loc.get('id'))
+            rep = get_a_way(None, loc.get('resource'), loc.get('id'))
             f.write(str(rep) + '\n')
-        resp = get_municipality_ways(municipality_id, 'streets')
+        resp = get_municipality_ways_by_id(municipality_id, 'streets')
         # print(resp)
         for loc in resp:
-            rep = make_a_way(None, loc.get('resource'), loc.get('id'))
+            rep = get_a_way(None, loc.get('resource'), loc.get('id'))
             f.write(str(rep) + '\n')
         print('ok')
 
 
 def extract_ban_process(municipality_id):
-    response = make_municipality(None, municipality_id)
+    municipality = get_municipality_by_id(municipality_id)
+    response = make_municipality(None, municipality)
     print(response)
     if response:
         process(response)
-        resp = get_municipality_ways(municipality_id, 'localities')
+        resp = get_municipality_ways_by_id(municipality_id, 'localities')
         print(resp)
         for loc in resp:
-            rep = make_a_way(None, loc.get('resource'), loc.get('id'))
+            rep = get_a_way(None, loc.get('resource'), loc.get('id'))
             print(rep)
             process(rep)
-        resp = get_municipality_ways(municipality_id, 'streets')
+        resp = get_municipality_ways_by_id(municipality_id, 'streets')
         print(resp)
         for loc in resp:
-            rep = make_a_way(None, loc.get('resource'), loc.get('id'))
+            rep = get_a_way(None, loc.get('resource'), loc.get('id'))
             print(rep)
             process(rep)
         # if resp:
@@ -94,7 +145,7 @@ def extract_ban_process(municipality_id):
         print('ok')
 
 
-def get_municipality_ways(municipality_id, way_type):
+def get_municipality_ways_by_id(municipality_id, way_type):
     uri = BAN_SERVER + "/municipality/{}/{}".format(municipality_id, way_type)
     ways = request_call(uri)
     return get_ways_by_municipality(ways)
@@ -114,32 +165,36 @@ def get_ways_by_municipality(ways):
     return response
 
 
-def make_municipality(action, municipality_id):
+def make_municipality(action, municipality):
     importance = 1
     orig_center = {'lon': 0, 'lat': 0, 'postcode': None}
-    uri = BAN_SERVER + "/{}/{}".format('municipality', municipality_id)
-    munic = request_call(uri)
-    if munic is None:
+    if municipality is None:
         return None
-    if munic.get('postcodes'):
-        orig_center['postcode'] = munic.get('postcodes').get(0)
+    if municipality.get('postcodes'):
+        orig_center['postcode'] = municipality.get('postcodes').get(0)
 
-    response = {'id': munic.get('insee'), 'type': 'municipality', 'name': munic.get('name'),
+    response = {'id': municipality.get('insee'), 'type': 'municipality', 'name': municipality.get('name'),
                 'postcode': orig_center.get('postcode'), 'lon': orig_center.get('lon'), 'lat': orig_center.get('lat'),
-                'city': munic.get('name'), 'importance': importance}
+                'city': municipality.get('name'), 'importance': importance}
     if action is 'update':
         response['_action'] = 'update'
     return response
 
 
-def make_a_way(action, resource_name, resource_id):
+def get_municipality_by_id(municipality_id):
+    uri = BAN_SERVER + "/{}/{}".format('municipality', municipality_id)
+    municipality = request_call(uri)
+    return municipality
+
+
+def get_a_way(resource_name, resource_id):
     uri = BAN_SERVER + "/{}/{}".format(resource_name, resource_id)
     way = request_call(uri)
-
-    importance = 1
     hns = get_housenumbers(uri)
-    default_orig_center = {'lon': 0, 'lat': 0, 'postcode': None}
+    return hns, resource_name, way
 
+
+def make_a_way(action, hns, resource_name, way):
     json_resp = {'id': way.get('municipality').get('insee') + '_' + way.get('fantoir'), 'type': resource_name,
                  'name': way.get('name'), 'insee': way.get('municipality').get('insee'),
                  'postcode': way.get('postcode', ''), 'lon': way.get('lon', 0), 'lat': way.get('lat', 0),
@@ -196,7 +251,7 @@ def request_call(url):
         return None
 
 
-def write_responce(action, response, in_file):
+def write_responce(response, in_file):
     in_file.write(response + '\n')
 
 
@@ -210,3 +265,17 @@ def get_importance(street_name):
     elif not street_name.find('Rue') == -1:
         importance = 2 / 4
     return importance
+
+
+def iter_file(path, formatter=lambda x: x):
+    path = Path(path)
+    if not path.exists():
+        abort('Path does not exist: {}'.format(path))
+    with path.open() as f:
+        for l in f:
+            yield formatter(l)
+
+
+def abort(msg):
+    sys.stderr.write("\n" + msg)
+    sys.exit(1)
