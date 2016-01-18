@@ -30,31 +30,52 @@ SYNONYMS_PATH = RESOURCES_ROOT.joinpath('synonyms').joinpath('fr.txt')
 
 # Pipeline stream to be used.
 PROCESSORS = [
-    'addok.textutils.default.pipeline.tokenize',
-    'addok.textutils.default.pipeline.normalize',
-    'addok.textutils.default.pipeline.synonymize',
-    'addok.textutils.fr.phonemicize',
+    'addok.helpers.text.tokenize',
+    'addok.helpers.text.normalize',
+    'addok.helpers.text.synonymize',
 ]
-QUERY_PROCESSORS = (
-    'addok.textutils.fr_FR.extract_address',
-    'addok.textutils.fr_FR.clean_query',
-    'addok.textutils.fr_FR.glue_ordinal',
-    'addok.textutils.fr_FR.fold_ordinal',
-)
-HOUSENUMBER_PROCESSORS = [
-    'addok.textutils.fr_FR.glue_ordinal',
-    'addok.textutils.fr_FR.fold_ordinal',
+QUERY_PROCESSORS = []
+HOUSENUMBER_PROCESSORS = []
+BATCH_PROCESSORS = [
+    'addok.batch.to_json',
 ]
-BATCH_PROCESSORS = (
-    'addok.batch.default.to_json',
-)
-API_ENDPOINTS = [
-    ('/get/<doc_id>/', 'get'),
-    ('/search/', 'search'),
-    ('/reverse/', 'reverse'),
-    ('/search/csv/', 'search.csv'),
-    ('/reverse/csv/', 'reverse.csv'),
-    ('/csv/', 'search.csv'),  # Retrocompat.
+RESULTS_COLLECTORS = [
+    'addok.helpers.collectors.only_commons',
+    'addok.helpers.collectors.no_meaningful_but_common_try_autocomplete',
+    'addok.helpers.collectors.bucket_with_meaningful',
+    'addok.helpers.collectors.reduce_with_other_commons',
+    'addok.helpers.collectors.ensure_geohash_results_are_included_if_center_is_given',  # noqa
+    'addok.helpers.collectors.autocomplete',
+    'addok.helpers.collectors.check_bucket_full',
+    'addok.helpers.collectors.check_cream',
+    'addok.helpers.collectors.extend_results_reducing_tokens',
+]
+SEARCH_RESULT_PROCESSORS = [
+    'addok.helpers.results.match_housenumber',
+    'addok.helpers.results.make_labels',
+    'addok.helpers.results.score_by_importance',
+    'addok.helpers.results.score_by_autocomplete_distance',
+    'addok.helpers.results.score_by_ngram_distance',
+    'addok.helpers.results.score_by_geo_distance',
+]
+REVERSE_RESULT_PROCESSORS = [
+    'addok.helpers.results.load_closer',
+    'addok.helpers.results.make_labels',
+    'addok.helpers.results.score_by_geo_distance',
+]
+INDEXERS = [
+    'addok.helpers.index.fields_indexer',
+    'addok.helpers.index.filters_indexer',
+    'addok.helpers.index.pairs_indexer',
+    'addok.helpers.index.housenumbers_indexer',
+    'addok.helpers.index.document_indexer',
+]
+DEINDEXERS = [
+    'addok.helpers.index.fields_deindexer',
+    'addok.helpers.index.filters_deindexer',
+    'addok.helpers.index.pairs_deindexer',
+    'addok.helpers.index.housenumbers_deindexer',
+    'addok.helpers.index.document_deindexer',
 ]
 URL_MAP = None
 
@@ -102,35 +123,10 @@ LOG_DIR = os.environ.get("ADDOK_LOG_DIR", Path(__file__).parent.parent.parent)
 LOG_QUERIES = False
 LOG_NOT_FOUND = False
 
-PSQL = {
-    'dbname': 'nominatim'
-}
-PSQL_PROCESSORS = (
-    'addok.batch.psql.query',
-    'addok.batch.nominatim.get_context',
-    'addok.batch.nominatim.get_housenumbers',
-    'addok.batch.nominatim.row_to_doc',
-)
-PSQL_QUERY = """SELECT osm_type,osm_id,class,type,admin_level,rank_search,
-             place_id,parent_place_id,street,postcode,
-             (extratags->'ref') as ref,
-             ST_X(ST_Centroid(geometry)) as lon,
-             ST_Y(ST_Centroid(geometry)) as lat,
-             name->'name' as name, name->'short_name' as short_name,
-             name->'official_name' as official_name,
-             name->'alt_name' as alt_name
-             FROM placex
-             WHERE name ? 'name'
-             {extrawhere}
-             ORDER BY place_id
-             {limit}
-             """
-PSQL_EXTRAWHERE = ''
-# If you only want addresses
-# PSQL_EXTRAWHERE = "AND class='highway' AND osm_type='W'"
-# If you don't want any address
-# PSQL_EXTRAWHERE = ("AND (class!='highway' OR osm_type='W') "
-#                    "AND class!='place'")
-
-PSQL_LIMIT = None
-PSQL_ITERSIZE = 1000
+PLUGINS = [
+    'addok.shell',
+    'addok.http',
+    'addok.batch',
+    'addok.fuzzy',
+    'addok.update',
+]

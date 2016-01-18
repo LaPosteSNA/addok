@@ -5,18 +5,14 @@ import geohash
 
 from . import config
 from .db import DB
-from .index_utils import (PROCESSORS, VALUE_SEPARATOR, document_key,
-                          edge_ngram_key, filter_key, geohash_key, pair_key,
-                          token_key)
-from .textutils.default import (ascii, compare_ngrams, contains, equals,
-                                make_fuzzy, startswith)
-from .utils import haversine_distance, import_by_path, iter_pipe, km_to_score
-
-QUERY_PROCESSORS = [import_by_path(path) for path in config.QUERY_PROCESSORS]
+from .helpers import iter_pipe
+from .helpers.index import (VALUE_SEPARATOR, document_key, edge_ngram_key,
+                            filter_key, geohash_key, pair_key, token_key)
+from .helpers.text import ascii
 
 
 def preprocess_query(s):
-    return list(iter_pipe(s, QUERY_PROCESSORS + PROCESSORS))
+    return list(iter_pipe(s, config.QUERY_PROCESSORS + config.PROCESSORS))
 
 
 def token_key_frequency(key):
@@ -54,19 +50,11 @@ def compute_geohash_key(geoh, with_neighbors=True):
 
 class Result(object):
 
-    MAX_IMPORTANCE = 0.0
-    DEFAULT_IMPORTANCE = 0.0
-
     def __init__(self, _id):
         self.housenumber = None
         self._scores = {}
         self.load(_id)
-        if self.MAX_IMPORTANCE:
-            importance = getattr(self, 'importance', None)
-            importance = importance or self.DEFAULT_IMPORTANCE
-            self.add_score('importance',
-                           float(importance) * config.IMPORTANCE_WEIGHT,
-                           self.MAX_IMPORTANCE)
+        self.labels = []
 
     def load(self, _id):
         self._cache = {}
@@ -91,65 +79,14 @@ class Result(object):
         return self._cache[key]
 
     def __str__(self):
-        return self.labels[0]
+        return (self.labels[0] if self.labels
+                else self._rawattr(config.NAME_FIELD)[0])
 
     def _rawattr(self, key):
         return self._doc.get(key, '').split(VALUE_SEPARATOR)
 
-    @property
-    def labels(self):
-        if hasattr(config, 'MAKE_LABELS'):
-            self._labels = config.MAKE_LABELS(self)
-        if not self._labels:
-            housenumber = getattr(self, 'housenumber', None)
-
-            def add(labels, label):
-                labels.insert(0, label)
-                if housenumber:
-                    label = '{} {}'.format(housenumber, label)
-                    labels.insert(0, label)
-
-            self._labels = []
-            city = self.city
-            postcode = self.postcode
-            names = self._rawattr('name')
-            if not isinstance(names, (list, tuple)):
-                names = [names]
-            for name in names:
-                labels = []
-                label = name
-                add(labels, label)
-                if city and city != label:
-                    if postcode:
-                        label = '{} {}'.format(label, postcode)
-                        add(labels, label)
-                    label = '{} {}'.format(label, city)
-                    add(labels, label)
-                self._labels.extend(labels)
-        return self._labels
-
     def __repr__(self):
         return '<{} - {} ({})>'.format(str(self), self.id, self.score)
-
-    def match_housenumber(self, tokens):
-        originals = [t.original for t in tokens]
-        name_tokens = self.name.split()
-        for original in originals:
-            if original in self.housenumbers:
-                raw, lat, lon, *extra = self.housenumbers[original].split('|')
-                if raw in name_tokens and originals.count(original) != 2:
-                    # Consider that user is not requesting a housenumber if
-                    # token is also in name (ex. rue du 8 mai), unless this
-                    # token is twice in the query (8 rue du 8 mai).
-                    continue
-                self.housenumber = raw
-                self.lat = lat
-                self.lon = lon
-                self.type = 'housenumber'
-                if extra:
-                    extra = zip(config.HOUSENUMBERS_PAYLOAD_FIELDS, extra)
-                    self._cache.update(extra)
-                break
 
     @property
     def keys(self):
@@ -212,73 +149,10 @@ class Result(object):
     def str_distance(self):
         return self._scores.get('str_distance', [0.0])[0]
 
-    def score_by_autocomplete_distance(self, query):
-        score = 0
-        query = ascii(query)
-        labels = []
-        for label in self.labels:
-            label = ascii(label)
-            labels.append(label)  # Cache ascii folding.
-            if equals(query, label):
-                score = 1.0
-            elif startswith(query, label):
-                score = 0.9
-            elif contains(query, label):
-                score = 0.7
-            if score:
-                self.add_score('str_distance', score, ceiling=1.0)
-                if score >= config.MATCH_THRESHOLD:
-                    break
-        if not score:
-            self.score_by_ngram_distance(query, labels=labels)
-
-    def score_by_ngram_distance(self, query, labels=None):
-        query = ascii(query)
-        for label in labels or self.labels:
-            label = ascii(label)
-            score = compare_ngrams(label, query)
-            self.add_score('str_distance', score, ceiling=1.0)
-            if score >= config.MATCH_THRESHOLD:
-                break
-
-    def score_by_geo_distance(self, center):
-        km = haversine_distance((float(self.lat), float(self.lon)), center)
-        self.distance = km * 1000
-        self.add_score('geo_distance', km_to_score(km), ceiling=0.1)
-
-    def score_by_contain(self, query):
-        score = 0.0
-        if contains(query, str(self)):
-            score = 0.1
-        self.add_score('contains_boost', score, ceiling=0.1)
-
     @classmethod
     def from_id(self, _id):
         """Return a result from it's document id."""
         return Result(document_key(_id))
-
-
-class SearchResult(Result):
-
-    MAX_IMPORTANCE = config.IMPORTANCE_WEIGHT
-
-
-class ReverseResult(Result):
-
-    def load_closer(self, lat, lon):
-
-        def sort(h):
-            return haversine_distance((float(h[1]), float(h[2])), (lat, lon))
-
-        candidates = [v.split('|') for v in self.housenumbers.values()]
-        candidates.append((None, self.lat, self.lon))
-        candidates.sort(key=sort)
-        closer = candidates[0]
-        if closer[0]:  # Means a housenumber is closer than street centerpoint.
-            self.housenumber = closer[0]
-            self.lat = closer[1]
-            self.lon = closer[2]
-            self.type = "housenumber"
 
 
 class Token(object):
@@ -302,9 +176,6 @@ class Token(object):
     def search(self):
         if DB.exists(self.key):
             self.db_key = self.key
-
-    def make_fuzzy(self, fuzzy=1):
-        self.neighbors = make_fuzzy(self.original, fuzzy)
 
     def autocomplete(self):
         key = edge_ngram_key(self.original)
@@ -348,7 +219,7 @@ class Search(BaseHelper):
                  verbose=False):
         super().__init__(verbose=verbose)
         self.match_all = match_all
-        self._fuzzy = fuzzy
+        self.fuzzy = fuzzy
         self.limit = limit
         self.min = self.limit
         self._autocomplete = autocomplete
@@ -365,7 +236,7 @@ class Search(BaseHelper):
         self.keys = []
         self.check_housenumber = filters.get('type') in [None, "housenumber"]
         self.filters = [filter_key(k, v) for k, v in filters.items() if v]
-        self.query = query.strip()
+        self.query = ascii(query.strip())
         self.preprocess()
         if not self.tokens:
             return []
@@ -384,137 +255,11 @@ class Search(BaseHelper):
         self.debug('Not found tokens: %s', self.not_found)
         self.debug('Filters: %s', ['{}={}'.format(k, v)
                                    for k, v in filters.items()])
-        steps = [
-            self.step_only_commons,
-            self.step_no_meaningful_but_common_try_autocomplete,
-            self.step_bucket_with_meaningful,
-            self.step_reduce_with_other_commons,
-            self.step_ensure_geohash_results_are_included_if_center_is_given,
-            self.step_autocomplete,
-            self.step_check_bucket_full,
-            self.step_check_cream,
-            self.step_fuzzy,
-            self.step_extend_results_reducing_tokens,
-        ]
-        for step in steps:
-            self.debug('** %s **', step.__name__.upper())
-            if step():
+        for collector in config.RESULTS_COLLECTORS:
+            self.debug('** %s **', collector.__name__.upper())
+            if collector(self):
                 return self.render()
         return self.render()
-
-    def step_only_commons(self):
-        if len(self.tokens) == len(self.common):
-            # Only common terms, shortcut to search
-            keys = [t.db_key for t in self.tokens]
-            if self.geohash_key:
-                keys.append(self.geohash_key)
-                self.debug('Adding geohash %s', self.geohash_key)
-                self.autocomplete(self.tokens, use_geohash=True)
-            if len(keys) == 1 or self.geohash_key:
-                self.add_to_bucket(keys)
-            if self.bucket_dry and len(keys) > 1:
-                count = 0
-                # Scan the less frequent token.
-                self.tokens.sort(key=lambda t: t.frequency)
-                first = self.tokens[0]
-                if first.frequency < config.INTERSECT_LIMIT:
-                    self.debug('Under INTERSECT_LIMIT, brut force.')
-                    keys = [t.db_key for t in self.tokens]
-                    self.add_to_bucket(keys)
-                else:
-                    self.debug('INTERSECT_LIMIT hit, manual scan on %s', first)
-                    others = [t.db_key for t in self.tokens[1:]]
-                    ids = DB.zrevrange(first.db_key, 0, 500)
-                    for id_ in ids:
-                        count += 1
-                        if all(DB.sismember(f, id_) for f in self.filters) \
-                           and all(DB.zrank(k, id_) for k in others):
-                            self.bucket.add(id_)
-                        if self.bucket_full:
-                            break
-                    self.debug('%s results after scan (%s loops)',
-                               len(self.bucket), count)
-            self.autocomplete(self.tokens, skip_commons=True)
-            if not self.bucket_empty:
-                self.debug('Only common terms. Return.')
-                return True
-
-    def step_no_meaningful_but_common_try_autocomplete(self):
-        if not self.meaningful and self.common:
-            # Only commons terms, try to reduce with autocomplete.
-            self.debug('Only commons, trying autocomplete')
-            self.autocomplete(self.common)
-            self.meaningful = self.common[:1]
-            if not self.pass_should_match_threshold:
-                return False
-            if self.bucket_full or self.bucket_overflow or self.has_cream():
-                return True
-
-    def step_bucket_with_meaningful(self):
-        if len(self.meaningful) == 1 and self.common:
-            # Avoid running with too less tokens while having commons terms.
-            for token in self.common:
-                if token not in self.meaningful:
-                    self.meaningful.append(token)
-                    break  # We want only one more.
-        self.keys = [t.db_key for t in self.meaningful]
-        if self.bucket_empty:
-            self.new_bucket(self.keys, self.SMALL_BUCKET_LIMIT)
-            if not self._autocomplete and self.has_cream():
-                # Do not check cream before computing autocomplete when
-                # autocomplete is on.
-                self.debug('Cream found. Returning.')
-                return True
-            if len(self.bucket) == self.SMALL_BUCKET_LIMIT:
-                # Do not rerun if bucket with limit 10 has returned less
-                # than 10 results.
-                self.new_bucket(self.keys)
-        else:
-            self.add_to_bucket(self.keys)
-
-    def step_reduce_with_other_commons(self):
-        for token in self.common:  # Already ordered by frequency asc.
-            if token not in self.meaningful and self.bucket_overflow:
-                self.debug('Now considering also common token %s', token)
-                self.meaningful.append(token)
-                self.keys = [t.db_key for t in self.meaningful]
-                self.new_bucket(self.keys)
-
-    def step_ensure_geohash_results_are_included_if_center_is_given(self):
-        if self.bucket_overflow and self.geohash_key:
-            self.debug('Bucket overflow and center, force nearby look up')
-            self.add_to_bucket(self.keys + [self.geohash_key], self.limit)
-
-    def step_autocomplete(self):
-        if self.bucket_overflow:
-            return
-        if not self._autocomplete:
-            self.debug('Autocomplete not active. Abort.')
-            return
-        if self.geohash_key:
-            self.autocomplete(self.meaningful, use_geohash=True)
-        self.autocomplete(self.meaningful)
-
-    def step_fuzzy(self):
-        if self._fuzzy and not self.has_cream():
-            if self.not_found:
-                self.fuzzy(self.not_found)
-            if self.bucket_dry and not self.has_cream():
-                self.fuzzy(self.meaningful)
-            if self.bucket_dry and not self.has_cream():
-                self.fuzzy(self.meaningful, include_common=False)
-
-    def step_extend_results_reducing_tokens(self):
-        if self.has_cream():
-            return  # No need.
-        if self.bucket_dry:
-            self.reduce_tokens()
-
-    def step_check_bucket_full(self):
-        return self.bucket_full
-
-    def step_check_cream(self):
-        return self.has_cream()
 
     @property
     def geohash_key(self):
@@ -569,71 +314,6 @@ class Search(BaseHelper):
                     extra_keys.append(self.geohash_key)
                 self.add_to_bucket(keys + extra_keys)
 
-    def fuzzy(self, tokens, include_common=True):
-        if not self.bucket_dry or not tokens:
-            return
-        self.debug('Fuzzy on. Trying with %s.', tokens)
-        tokens.sort(key=lambda t: len(t), reverse=True)
-        allkeys = self.keys[:]
-        if include_common:
-            # As we are in fuzzy, try to narrow as much as possible by adding
-            # unused commons tokens.
-            common = [t for t in self.common if t.db_key not in self.keys]
-            allkeys.extend([t.db_key for t in common])
-        for try_one in tokens:
-            if self.bucket_full:
-                break
-            keys = allkeys[:]
-            if try_one.db_key in keys:
-                keys.remove(try_one.db_key)
-            if try_one.isdigit():
-                continue
-            self.debug('Going fuzzy with %s', try_one)
-            try_one.make_fuzzy(fuzzy=self.fuzzy)
-            if len(keys):
-                # Only retains tokens that have been seen in the index at least
-                # once with the other tokens.
-                DB.sadd(self.query, *try_one.neighbors)
-                interkeys = [pair_key(k[2:]) for k in keys]
-                interkeys.append(self.query)
-                fuzzy_words = DB.sinter(interkeys)
-                DB.delete(self.query)
-                # Keep the priority we gave in building fuzzy terms (inversion
-                # first, then substitution, etc.).
-                fuzzy_words = [w.decode() for w in fuzzy_words]
-                fuzzy_words.sort(key=lambda x: try_one.neighbors.index(x))
-            else:
-                # The token we are considering is alone.
-                fuzzy_words = []
-                for neighbor in try_one.neighbors:
-                    key = token_key(neighbor)
-                    count = DB.zcard(key)
-                    if count:
-                        fuzzy_words.append(neighbor)
-            self.debug('Found fuzzy candidates %s', fuzzy_words)
-            fuzzy_keys = [token_key(w) for w in fuzzy_words]
-            for key in fuzzy_keys:
-                if self.bucket_dry:
-                    self.add_to_bucket(keys + [key])
-
-    def reduce_tokens(self):
-        # Only if bucket is empty or we have margin on should_match_threshold.
-        if self.bucket_empty\
-           or len(self.meaningful) - 1 > self.should_match_threshold:
-            self.debug('Bucket dry. Trying to remove some tokens.')
-
-            def sorter(t):
-                # First numbers, then by frequency
-                return (2 if t.original.isdigit() else 1, t.frequency)
-
-            self.meaningful.sort(key=sorter, reverse=True)
-            for token in self.meaningful:
-                keys = self.keys[:]
-                keys.remove(token.db_key)
-                self.add_to_bucket(keys)
-                if self.bucket_overflow:
-                    break
-
     def intersect(self, keys, limit=0):
         if not limit > 0:
             limit = config.BUCKET_LIMIT
@@ -667,15 +347,9 @@ class Search(BaseHelper):
         for _id in self.bucket:
             if _id in self.results:
                 continue
-            result = SearchResult(_id)
-            if self.check_housenumber:
-                result.match_housenumber(self.tokens)
-            if self._autocomplete:
-                result.score_by_autocomplete_distance(self.query)
-            else:
-                result.score_by_ngram_distance(self.query)
-            if self.lat and self.lon:
-                result.score_by_geo_distance((self.lat, self.lon))
+            result = Result(_id)
+            for processor in config.SEARCH_RESULT_PROCESSORS:
+                processor(self, result)
             self.results[_id] = result
         self.debug('Done computing results')
 
@@ -697,16 +371,16 @@ class Search(BaseHelper):
         return not self.bucket
 
     @property
-    def bucket_greasy(self):
-        return any(r.str_distance >= config.MATCH_THRESHOLD
-                   for _id, r in self.results.items())
+    def cream(self):
+        return len([r for _id, r in self.results.items()
+                    if r.str_distance >= config.MATCH_THRESHOLD])
 
     def has_cream(self):
         if self.bucket_empty or self.bucket_overflow or len(self.bucket) > 10:
             return False
         self.debug('Checking cream.')
         self.convert()
-        return self.bucket_greasy
+        return self.cream > 0
 
     def set_should_match_threshold(self):
         self.matched_keys = set([])
@@ -761,12 +435,11 @@ class Reverse(BaseHelper):
 
     def convert(self):
         for _id in self.keys:
-            r = ReverseResult(_id)
-            if self.check_housenumber:
-                r.load_closer(self.lat, self.lon)
-            r.score_by_geo_distance((self.lat, self.lon))
-            self.results.append(r)
-            self.debug(r, r.distance, r.score)
+            result = Result(_id)
+            for processor in config.REVERSE_RESULT_PROCESSORS:
+                processor(self, result)
+            self.results.append(result)
+            self.debug(result, result.distance, result.score)
         self.results.sort(key=lambda r: r.score, reverse=True)
         return self.results[:self.limit]
 

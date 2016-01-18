@@ -8,15 +8,22 @@ from pathlib import Path
 
 import sys
 
-from addok.batch.utils import process
-from ban.commands import report
+from addok import hooks
+from . import batch
 
 BAN_SERVER = "http://localhost:5959"  # "http://ban-dev.data.gouv.fr:80"
 PATH = 'C:\\Users\\mhx157'
 
 
+@hooks.register
+def addok_register_command(subparsers):
+    parser = subparsers.add_parser('update', help='Import documents update')
+    parser.add_argument('filepath', nargs='*',
+                        help='Path to file to process')
+    parser.set_defaults(func=get_response)
 
-def get_response():
+
+def get_response(args):
     add = 'C:\\Users\\mhx157\\AllResourcesBAN.json'
     path = Path(add)
     with path.open() as f:
@@ -33,14 +40,14 @@ def get_response():
             response = make_municipality(None, bddban['municipality'][municipality])
             print(response)
             if response:
-                process(response)
+                batch.process(response)
 
         if jr['resource'] == 'locality':
             hns = get_housenumbers_in_file_for(f, jr)
             response = make_a_way(None, hns, jr['resource'], jr['id'])
             print(response)
             if response:
-                process(response)
+                batch.process(response)
 
         print('finish')
 
@@ -54,14 +61,13 @@ def get_response():
         # print(resp)
 
 
-def get_housenumbers_in_file_for(f,res):
+def get_housenumbers_in_file_for(f, res):
     hns = {}
     for line in f:
         jr = json.loads(line)
         if jr['resource'] == 'housenumber' and jr[res['resource']] == res['id']:
             hns.update(make_a_housenumber(jr))
     return hns
-
 
 
 def update_by_diff():
@@ -79,7 +85,7 @@ def update_by_diff():
 
         else:
             hns, resource_name, way = get_a_way('update', diff.get('resource'), diff.get('resource_id'))
-        process(make_a_way('update', hns, resource_name, way))
+        batch.process(make_a_way('update', hns, resource_name, way))
         print('process ok')
 
         # with Path(os.path.join(PATH, 'allBAN_addok.json')).open(mode='w') as f:
@@ -127,19 +133,19 @@ def extract_ban_process(municipality_id):
     response = make_municipality(None, municipality)
     print(response)
     if response:
-        process(response)
+        batch.process(response)
         resp = get_municipality_ways_by_id(municipality_id, 'localities')
         print(resp)
         for loc in resp:
             rep = get_a_way(None, loc.get('resource'), loc.get('id'))
             print(rep)
-            process(rep)
+            batch.process(rep)
         resp = get_municipality_ways_by_id(municipality_id, 'streets')
         print(resp)
         for loc in resp:
             rep = get_a_way(None, loc.get('resource'), loc.get('id'))
             print(rep)
-            process(rep)
+            batch.process(rep)
         # if resp:
         #     process(resp)
         print('ok')
