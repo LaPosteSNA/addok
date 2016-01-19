@@ -6,6 +6,7 @@ Usage:
     addok shell [options]
     addok batch [<filepath>...] [options]
     addok ngrams [options]
+    addok update
 
 Examples:
     addok serve --port 5432 --debug
@@ -32,6 +33,8 @@ import os
 import sys
 
 from docopt import docopt
+
+from addok.update import get_response
 
 
 def main():
@@ -77,6 +80,8 @@ def main():
             batch.process_psql()
     elif args['ngrams']:
         create_edge_ngrams()
+    elif args['update']:
+        get_response()
 
 if __name__ == '__main__':
     main()
