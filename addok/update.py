@@ -21,6 +21,28 @@ def addok_register_command(subparsers):
     parser.set_defaults(func=get_response)
 
 
+def correlate_resource(dict_ban):
+    for resource in dict_ban:
+        if resource in ('locality', 'street'):
+            dict_entity = dict_ban[resource]
+            for entity in dict_entity:
+                # remplacement ID par entité
+                dict_entity[entity]['municipality'] = dict_ban['municipality'][dict_entity[entity]['municipality']]
+        if resource in ('housenumber'):
+            dict_entity = dict_ban[resource]
+            for hn in dict_entity:
+                if dict_entity[hn]['street']:
+                    dict_ban['street'][dict_entity[hn]['street']]['lon'] = dict_entity[hn]['center']['coordinates'][0]
+                    dict_ban['street'][dict_entity[hn]['street']]['lat'] = dict_entity[hn]['center']['coordinates'][1]
+                if dict_entity[hn]['locality']:
+                    dict_ban['locality'][dict_entity[hn]['locality']]['lon'] = dict_entity[hn]['center']['coordinates'][0]
+                    dict_ban['locality'][dict_entity[hn]['locality']]['lat'] = dict_entity[hn]['center']['coordinates'][1]
+
+
+
+    return dict_ban
+
+
 def get_response():
     add = 'C:\\Users\\mhx157\\AllResourcesBAN.json'
     path = Path(add)
@@ -28,10 +50,12 @@ def get_response():
         bddban = {}
         for line in f:
             jr = json.loads(line)
-            if jr['resource'] != 'housenumber':
+            if jr['resource'] != 'housenumber' or jr['number'] == '0':
                 if jr['resource'] not in bddban:
                     bddban[jr['resource']] = {}
                 bddban[jr['resource']][jr['id']] = jr
+
+        bddban = correlate_resource(bddban)
 
         for municipality in bddban['municipality']:
             response = make_municipality(None, bddban['municipality'][municipality])
@@ -51,11 +75,12 @@ def get_response():
             if response:
                 process(response)
 
+        f.seek(0)
         for line in f:
             jr = json.loads(line)
-            if jr['resource'] == 'housenumber':
-                hns = get_housenumbers_in_file_for(f, jr)
-                response = make_a_way(None, hns, jr['resource'], jr['id'])
+            if jr['resource'] == 'housenumber' and jr['number'] != '0':
+                hns = get_housenumbers_in_file_for(bddban, jr)
+                response = make_a_way(None, hns, jr['resource'], jr)
                 print(response)
                 if response:
                     process(response)
@@ -72,13 +97,20 @@ def get_response():
         # print(resp)
 
 
-def get_housenumbers_in_file_for(f, res):
-    hns = {}
-    for line in f:
-        jr = json.loads(line)
-        if jr['resource'] == 'housenumber' and jr[res['resource']] == res['id']:
-            hns.update(make_a_housenumber(jr))
-    return hns
+def get_housenumbers_in_file_for(bddban, res):
+    if res['street']:
+        res.update(bddban['street'][res['street']])
+        res['municipality'] = bddban['street'][res['street']['id']]['municipality']
+
+    if res['locality']:
+        res.update(bddban['locality'][res['locality']])
+        res['municipality'] = bddban['locality'][res['locality']['id']]['municipality']
+
+    if res['postcode']:
+        res['postcode'] = bddban['postcode'][res['postcode']]
+
+    return make_a_housenumber(res)
+
 
 
 def update_by_diff():
