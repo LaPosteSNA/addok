@@ -7,7 +7,7 @@ Usage:
     addok batch [<filepath>...] [options]
     addok ngrams [options]
     addok update_by_file [<filepath>] [options]
-    addok update_by_api
+    addok update_by_api [options]
 
 Examples:
     addok serve --port 5432 --debug
@@ -28,6 +28,7 @@ Options:
     --dbport=<string>   override dbport
     --limit=<number>    add an optional limit
     --config=<path>     path to local config file
+    --increment=<number> number of beginning diffs research
 """
 
 import os
@@ -86,7 +87,11 @@ def main():
             for path in args['<filepath>']:
                 update_by_file(path)
     elif args['update_by_api']:
-        update_by_diff()
+        if args['--increment']:
+            update_by_diff(args['--increment'])
+        else:
+            update_by_diff()
+
 
 
 if __name__ == '__main__':
