@@ -7,9 +7,9 @@ from pathlib import Path
 import logging
 
 from addok.batch.utils import process, batch
+from addok.config import default as config
 
-BAN_SERVER = "http://localhost:5959"  # "http://ban-dev.data.gouv.fr:80"
-PATH = 'C:\\Users\\mhx157'
+BAN_SERVER = config.BAN_SERVER
 
 
 def addok_register_command(subparsers):
@@ -25,11 +25,11 @@ def update_by_file(add):
         print('initialize...')
         bddban = {}
         for line in f:
-            jr = json.loads(line)
-            if jr['resource'] != 'housenumber' or jr['number'] == '0':
-                if jr['resource'] not in bddban:
-                    bddban[jr['resource']] = {}
-                bddban[jr['resource']][jr['id']] = jr
+            json_line = json.loads(line)
+            if json_line['resource'] != 'housenumber' or json_line['number'] == '0':
+                if json_line['resource'] not in bddban:
+                    bddban[json_line['resource']] = {}
+                bddban[json_line['resource']][json_line['id']] = json_line
 
         print('correlate...')
         bddban = correlate_resource(bddban)
@@ -48,8 +48,9 @@ def update_by_file(add):
 
 def update_by_diff(increment=''):
     diffs = request_diff(increment)
-    diff_generator = generator_by_diffs(diffs)
-    batch(diff_generator)
+    if diffs:
+        diff_generator = generator_by_diffs(diffs)
+        batch(diff_generator)
 
 
 def response_generator(bddban, f):
@@ -196,7 +197,7 @@ def request_housenumbers(resource_name, resource_id):
         try:
             housenumbers = request_call(BAN_SERVER + urlparse(housenumbers.get('next')).get('path'))
         except Exception as e:
-            logging.exception(e)
+            logging.log(logging.DEBUG, e)
             break
     return hns
 
