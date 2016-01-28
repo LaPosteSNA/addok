@@ -115,7 +115,6 @@ def generator_by_diffs(diffs):
                 elif way.get('locality'):
                     resource_name, way = get_a_way('locality',  way['locality']['id'])
             else:
-                # resource_name, way = get_a_way('way_type', diff['new']['id'])
                 hns = request_housenumbers(diff['resource'], diff['new']['id'])
             yield make_a_way('update', hns, resource_name, way)
 
@@ -126,12 +125,10 @@ def extract_ban_to_file(municipality_id, f):
     if response:
         f.write(str(response) + '\n')
         ways = request_municipality_ways_by_id(municipality_id, 'localities')
-        for response in ways_generator(ways):
-            f.write(str(response) + '\n')
+        [f.write(str(response) + '\n') for response in ways_generator(ways)]
 
         ways = request_municipality_ways_by_id(municipality_id, 'streets')
-        for response in ways_generator(ways):
-            f.write(str(response) + '\n')
+        [f.write(str(response) + '\n') for response in ways_generator(ways)]
         print('ok')
 
 
@@ -147,14 +144,10 @@ def extract_ban_process(municipality_id):
     if response:
         process(response)
         ways = request_municipality_ways_by_id(municipality_id, 'localities')
-        for response in ways_generator(ways):
-            batch(response)
+        [batch(response) for response in ways_generator(ways)]
 
         ways = request_municipality_ways_by_id(municipality_id, 'streets')
-        print(ways)
-        for response in ways_generator(ways):
-            batch(response)
-
+        [batch(response) for response in ways_generator(ways)]
         print('ok')
 
 
@@ -191,8 +184,7 @@ def request_housenumbers(resource_name, resource_id):
     uri = BAN_SERVER + "/{}/{}".format(resource_name, resource_id)
     hns = {}
     housenumbers = request_call(uri + '/housenumbers/')
-    for hn in housenumbers:
-        hns.update(make_a_housenumber(hn))
+    [hns.update(make_a_housenumber(hn)) for hn in housenumbers]
     return hns
 
 
@@ -236,14 +228,13 @@ def make_a_housenumber(hn):
                                                                'postcode': hn['postcode']}}
 
 
-def compute_importance(street_name):
+def compute_importance(name):
     importance = 1 / 4
-    if not street_name.find('Boulevard') == -1 or not street_name.find('Place') == -1 or not street_name.find(
-            'Espl') == -1:
+    if 'Boulevard' or 'Place' or 'Espl' or 'Esplanade' or 'Paris' in name:
         importance = 4 / 4
-    elif not street_name.find('Av') == -1:
+    elif 'Av' or 'Avenue' in name:
         importance = 3 / 4
-    elif not street_name.find('Rue') == -1:
+    elif 'Rue' in name:
         importance = 2 / 4
     return importance
 
@@ -253,10 +244,10 @@ def request_call(url):
     transition = url_call(url)
     if transition.get('collection'):
         while True:
-            for item in transition['collection']:
-                resp.append(item)
+            [resp.append(item) for item in transition['collection']]
             try:
-                transition = url_call(BAN_SERVER + urlparse(transition.get('next')).get('path'))
+                q = urlparse(transition.get('next'))
+                transition = url_call(BAN_SERVER + q.path + '?' + q.query)
             except Exception as e:
                 logging.log(logging.DEBUG, e)
                 break
@@ -270,20 +261,8 @@ def url_call(url):
     headers = {'Authorization': 'Bearer token'}
     try:
         response = requests.get(url, headers=headers)
-    except requests.exceptions.Timeout:
-        # Maybe set up for a retry, or continue in a retry loop
-        return None
-    except requests.exceptions.TooManyRedirects:
-        # Tell the user their URL was bad and try a different one
-        return None
-    except requests.exceptions.RequestException as e:
-        logging.exception(e)
-        # catastrophic error. bail.
-        return None
     except Exception as e:
         logging.exception(e)
         return None
     if response.ok:
         return response.json()
-    else:
-        return None
