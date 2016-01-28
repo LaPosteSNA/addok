@@ -65,11 +65,11 @@ def response_generator(bddban, f):
                 yield response
 
 
-def find_way_in_resource(jr):
-    if jr['locality']:
-        return jr['locality']
-    if jr['street']:
-        return jr['street']
+def find_way_in_resource(json_resource):
+    if json_resource['locality']:
+        return json_resource['locality']
+    if json_resource['street']:
+        return json_resource['street']
 
 
 def get_housenumbers_in_file_for(bddban, res):
@@ -104,7 +104,7 @@ def correlate_resource(dict_ban):
 
 
 def generator_by_diffs(diffs):
-    for diff in diffs['collection']:
+    for diff in diffs:
         if diff['resource'] != 'municipality':
             resource_name, way = get_a_way(diff['resource'], diff['new']['id'])
 
@@ -161,7 +161,7 @@ def extract_ban_process(municipality_id):
 def request_municipality_ways_by_id(municipality_id, way_type):
     uri = BAN_SERVER + "/municipality/{}/{}".format(municipality_id, way_type)
     ways = request_call(uri)
-    return request_ways_by_municipality(ways)
+    return ways
 
 
 def request_housenumber_way(housenumber_id):
@@ -191,30 +191,9 @@ def request_housenumbers(resource_name, resource_id):
     uri = BAN_SERVER + "/{}/{}".format(resource_name, resource_id)
     hns = {}
     housenumbers = request_call(uri + '/housenumbers/')
-    while True:
-        for hn in housenumbers['collection']:
-            hns.update(make_a_housenumber(hn))
-        try:
-            housenumbers = request_call(BAN_SERVER + urlparse(housenumbers.get('next')).get('path'))
-        except Exception as e:
-            logging.log(logging.DEBUG, e)
-            break
+    for hn in housenumbers:
+        hns.update(make_a_housenumber(hn))
     return hns
-
-
-def request_ways_by_municipality(ways):
-    if ways is None:
-        return None
-    response = []
-    while True:
-        for way in ways['collection']:
-            response.append(way)
-        try:
-            ways = request_call(BAN_SERVER + urlparse(ways.get('next')).get('path'))
-        except Exception as e:
-            logging.exception(e)
-            break
-    return response
 
 
 def make_municipality(action, municipality):
@@ -270,9 +249,26 @@ def compute_importance(street_name):
 
 
 def request_call(url):
+    resp = []
+    transition = url_call(url)
+    if transition.get('collection'):
+        while True:
+            for item in transition['collection']:
+                resp.append(item)
+            try:
+                transition = url_call(BAN_SERVER + urlparse(transition.get('next')).get('path'))
+            except Exception as e:
+                logging.log(logging.DEBUG, e)
+                break
+        return resp
+    else:
+        return transition
+
+
+def url_call(url):
+    os.environ['NO_PROXY'] = 'localhost'
+    headers = {'Authorization': 'Bearer token'}
     try:
-        os.environ['NO_PROXY'] = 'localhost'
-        headers = {'Authorization': 'Bearer token'}
         response = requests.get(url, headers=headers)
     except requests.exceptions.Timeout:
         # Maybe set up for a retry, or continue in a retry loop
@@ -291,7 +287,3 @@ def request_call(url):
         return response.json()
     else:
         return None
-
-
-def write_responce(response, in_file):
-    in_file.write(response + '\n')

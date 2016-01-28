@@ -133,4 +133,4 @@ PSQL_EXTRAWHERE = ''
 PSQL_LIMIT = None
 PSQL_ITERSIZE = 1000
 
-BAN_SERVER = "http://ban-dev.data.gouv.fr:80"  # "http://localhost:5959"  # "http://ban-dev.data.gouv.fr:80"
+BAN_SERVER = "http://localhost:5959"  # "http://ban-dev.data.gouv.fr:80"
