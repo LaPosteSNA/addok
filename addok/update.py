@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from pathlib import Path
 import logging
 
-from addok.batch.utils import process, batch
+from addok.batch.utils import process, batch, get_increment, set_increm
 from addok.config import default as config
 
 BAN_SERVER = config.BAN_SERVER
@@ -46,7 +46,11 @@ def update_by_file(add):
         print('finish')
 
 
-def update_by_diff(increment=''):
+def update_by_diff(increment=0):
+    # if increment == '':
+    #     increment = 0
+    if get_increment() < int(increment):
+        set_increm(increment)
     diffs = request_diff(increment)
     if diffs:
         diff_generator = generator_by_diffs(diffs)
@@ -111,9 +115,9 @@ def generator_by_diffs(diffs):
             if diff['resource'] == 'housenumber':
                 hns = make_a_housenumber(way)
                 if way.get('street'):
-                    resource_name, way = get_a_way('street',  way['street']['id'])
+                    resource_name, way = get_a_way('street', way['street']['id'])
                 elif way.get('locality'):
-                    resource_name, way = get_a_way('locality',  way['locality']['id'])
+                    resource_name, way = get_a_way('locality', way['locality']['id'])
             else:
                 hns = request_housenumbers(diff['resource'], diff['new']['id'])
             yield make_a_way('update', hns, resource_name, way)

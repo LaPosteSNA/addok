@@ -286,3 +286,17 @@ def create_edge_ngrams():
     pool.close()
     pool.join()
     print('Done', count, 'in', time.time() - start)
+
+
+def index_increment(increment):
+    # pipe = DB.pipeline()
+    DB.set('increment', increment)
+
+
+def get_increment():
+    # pipe = DB.pipeline()
+    try:
+        increment = int(DB.get('increment'))
+    except:
+        return 0
+    return increment
